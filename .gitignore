@@ -1,0 +1,16 @@
+# Environment & secrets
+.env
+.env.local
+
+# Databases & persistent data
+data/clickhouse/
+data/postgres/
+data/redis/
+data/geo/*.mmdb
+data/geo/*.tmp
+data/geo/*.tar.gz
+
+# System logs & OS metadata
+*.log
+.DS_Store
+Thumbs.db

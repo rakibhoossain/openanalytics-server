@@ -1,0 +1,209 @@
+services:
+  # ==============================================================================
+  # 1. OLAP Columnar Store: ClickHouse (Official 26.8.8.8)
+  # ==============================================================================
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8.8.8
+    container_name: op_clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USERNAME:-openpanel}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openpanel}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-openpanel}
+    ports:
+      - "8123:8123" # HTTP API
+      - "9000:9000" # Native TCP Client
+    volumes:
+      - ./data/clickhouse:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user", "${CLICKHOUSE_USERNAME:-openpanel}", "--password", "${CLICKHOUSE_PASSWORD:-openpanel}", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ==============================================================================
+  # 2. Ephemeral State, Live Counters & Pub/Sub: Redis 7
+  # ==============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: op_redis
+    restart: unless-stopped
+    command: redis-server --notify-keyspace-events Ex
+    ports:
+      - "6380:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==============================================================================
+  # 3. Relational Storage & Meta CAPI: PostgreSQL 18
+  # ==============================================================================
+  postgres:
+    image: postgres:18-alpine
+    container_name: op_postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-analytics_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-analytics_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==============================================================================
+  # 4. GeoIP Database Auto-Updater (MaxMind GeoLite2-City & ASN)
+  # ==============================================================================
+  geoipupdate:
+    image: ghcr.io/maxmind/geoipupdate:v7
+    container_name: op_geoipupdate
+    restart: unless-stopped
+    environment:
+      GEOIPUPDATE_ACCOUNT_ID: ${GEOIPUPDATE_ACCOUNT_ID:-}
+      GEOIPUPDATE_LICENSE_KEY: ${GEOIPUPDATE_LICENSE_KEY:-}
+      GEOIPUPDATE_EDITION_IDS: "GeoLite2-City GeoLite2-ASN"
+      GEOIPUPDATE_FREQUENCY: 168
+    volumes:
+      - ./data/geo:/usr/share/GeoIP
+
+  # ==============================================================================
+  # 5. Ingest Microservice (Pre-Built Docker Hub Image on Port 8080)
+  # ==============================================================================
+  ingest:
+    platform: linux/amd64
+    image: ${DOCKER_REGISTRY:-rakibhoossain}/openanalytics-ingest:${TAG:-latest}
+    container_name: op_ingest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      INGEST_PORT: 8080
+      REDIS_ADDR: redis:6379
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+      KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-analytics.events.raw}
+      GEOIP_DATA_DIR: /usr/share/GeoIP
+      ANALYTICS_AUTH_KEY: ${ANALYTICS_AUTH_KEY:-}
+    volumes:
+      - ./data/geo:/usr/share/GeoIP:ro
+
+  # ==============================================================================
+  # 6. Query Microservice (Pre-Built Docker Hub Image on Port 8081)
+  # ==============================================================================
+  query:
+    platform: linux/amd64
+    image: ${DOCKER_REGISTRY:-rakibhoossain}/openanalytics-query:${TAG:-latest}
+    container_name: op_query
+    restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      QUERY_PORT: 8081
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-openpanel}
+      CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-openpanel}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openpanel}
+      REDIS_ADDR: redis:6379
+      REDIS_SESSION_TTL_MINUTES: ${REDIS_SESSION_TTL_MINUTES:-30}
+      ANALYTICS_AUTH_KEY: ${ANALYTICS_AUTH_KEY:-}
+      OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
+
+  # ==============================================================================
+  # 7. Stream Batch Worker (Kafka -> ClickHouse Consumer)
+  # ==============================================================================
+  worker:
+    platform: linux/amd64
+    image: ${DOCKER_REGISTRY:-rakibhoossain}/openanalytics-worker:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-openpanel}
+      CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-openpanel}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openpanel}
+      REDIS_ADDR: redis:6379
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-analytics_db}?sslmode=disable
+      POSTGRES_MAX_CONNS: ${POSTGRES_MAX_CONNS:-25}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+      KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-analytics.events.raw}
+      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-openanalytics-worker-group}
+      KAFKA_BATCH_SIZE: ${KAFKA_BATCH_SIZE:-5000}
+
+  # ==============================================================================
+  # 8. Behavioral ML Worker (Real-Time Intent Scoring via Kafka Stream)
+  # ==============================================================================
+  ml-worker:
+    platform: linux/amd64
+    image: ${DOCKER_REGISTRY:-rakibhoossain}/openanalytics-ml-worker:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      REDIS_ADDR: redis:6379
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+      KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-analytics.events.raw}
+      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-openanalytics-worker-group}
+      ML_MODEL_PATH: /app/data/models/cart_intent_v1.json
+    volumes:
+      - ./data/models:/app/data/models:ro
+
+  # ==============================================================================
+  # 9. Automated ML Retraining Daemon (Daily Scheduled Model Retraining)
+  # ==============================================================================
+  ml-retrain:
+    platform: linux/amd64
+    image: ${DOCKER_REGISTRY:-rakibhoossain}/openanalytics-ml-retrain:${TAG:-latest}
+    container_name: op_ml_retrain
+    restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 9000
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-openpanel}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USERNAME:-openpanel}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openpanel}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RETRAIN_INTERVAL_HOURS: ${RETRAIN_INTERVAL_HOURS:-24}
+    volumes:
+      - ./data/models:/app/data/models
