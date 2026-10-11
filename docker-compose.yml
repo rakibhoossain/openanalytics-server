@@ -91,12 +91,15 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       ENV: ${ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       INGEST_PORT: 8080
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://postgres:postgres@postgres:5432/analytics_db?sslmode=disable}
       REDIS_ADDR: redis:6379
       KAFKA_BROKERS: ${KAFKA_BROKERS:-}
       KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-analytics.events.raw}
@@ -118,6 +121,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     ports:
       - "8081:8081"
     environment:
@@ -128,10 +133,12 @@ services:
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-openpanel}
       CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-openpanel}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openpanel}
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://postgres:postgres@postgres:5432/analytics_db?sslmode=disable}
       REDIS_ADDR: redis:6379
       REDIS_SESSION_TTL_MINUTES: ${REDIS_SESSION_TTL_MINUTES:-30}
       ANALYTICS_AUTH_KEY: ${ANALYTICS_AUTH_KEY:-}
       OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
+      EXCHANGE_RATE_SYNC_HOURS: ${EXCHANGE_RATE_SYNC_HOURS:-6}
 
   # ==============================================================================
   # 7. Stream Batch Worker (Kafka -> ClickHouse Consumer)
@@ -161,6 +168,8 @@ services:
       KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-analytics.events.raw}
       KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-openanalytics-worker-group}
       KAFKA_BATCH_SIZE: ${KAFKA_BATCH_SIZE:-5000}
+      OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
+      EXCHANGE_RATE_SYNC_HOURS: ${EXCHANGE_RATE_SYNC_HOURS:-6}
 
   # ==============================================================================
   # 8. Behavioral ML Worker (Real-Time Intent Scoring via Kafka Stream)
