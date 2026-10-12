@@ -101,7 +101,7 @@ services:
       INGEST_PORT: 8080
       POSTGRES_URL: ${POSTGRES_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-analytics_db}?sslmode=disable}
       REDIS_ADDR: redis:6379
-      KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:29092}
       KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-analytics.events.raw}
       GEOIP_DATA_DIR: /usr/share/GeoIP
       ANALYTICS_AUTH_KEY: ${ANALYTICS_AUTH_KEY:-}
@@ -164,7 +164,7 @@ services:
       REDIS_ADDR: redis:6379
       POSTGRES_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-analytics_db}?sslmode=disable
       POSTGRES_MAX_CONNS: ${POSTGRES_MAX_CONNS:-25}
-      KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:29092}
       KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-analytics.events.raw}
       KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-openanalytics-worker-group}
       KAFKA_BATCH_SIZE: ${KAFKA_BATCH_SIZE:-5000}
@@ -185,7 +185,7 @@ services:
       ENV: ${ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       REDIS_ADDR: redis:6379
-      KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:29092}
       KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-analytics.events.raw}
       KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-openanalytics-worker-group}
       ML_MODEL_PATH: /app/data/models/cart_intent_v1.json
@@ -216,3 +216,7 @@ services:
       RETRAIN_INTERVAL_HOURS: ${RETRAIN_INTERVAL_HOURS:-24}
     volumes:
       - ./data/models:/app/data/models
+
+networks:
+  default:
+    name: openanalytics_net
