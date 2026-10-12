@@ -11,8 +11,8 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openpanel}
       CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-openpanel}
     ports:
-      - "8123:8123" # HTTP API
-      - "9000:9000" # Native TCP Client
+      - "${BIND_IP:-127.0.0.1}:8123:8123" # HTTP API (Localhost only)
+      - "${BIND_IP:-127.0.0.1}:9000:9000" # Native TCP Client (Localhost only)
     volumes:
       - ./data/clickhouse:/var/lib/clickhouse
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
     command: redis-server --notify-keyspace-events Ex
     ports:
-      - "6380:6379"
+      - "${BIND_IP:-127.0.0.1}:6380:6379"
     volumes:
       - ./data/redis:/data
     healthcheck:
@@ -52,7 +52,7 @@ services:
     container_name: op_postgres
     restart: unless-stopped
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${BIND_IP:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-analytics_db}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -94,12 +94,12 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "${BIND_IP:-127.0.0.1}:${INGEST_PORT:-8080}:8080"
     environment:
       ENV: ${ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       INGEST_PORT: 8080
-      POSTGRES_URL: ${POSTGRES_URL:-postgresql://postgres:postgres@postgres:5432/analytics_db?sslmode=disable}
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-analytics_db}?sslmode=disable}
       REDIS_ADDR: redis:6379
       KAFKA_BROKERS: ${KAFKA_BROKERS:-}
       KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-analytics.events.raw}
@@ -124,7 +124,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8081:8081"
+      - "${BIND_IP:-127.0.0.1}:${QUERY_PORT:-8081}:8081"
     environment:
       ENV: ${ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -133,7 +133,7 @@ services:
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-openpanel}
       CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-openpanel}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openpanel}
-      POSTGRES_URL: ${POSTGRES_URL:-postgresql://postgres:postgres@postgres:5432/analytics_db?sslmode=disable}
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-analytics_db}?sslmode=disable}
       REDIS_ADDR: redis:6379
       REDIS_SESSION_TTL_MINUTES: ${REDIS_SESSION_TTL_MINUTES:-30}
       ANALYTICS_AUTH_KEY: ${ANALYTICS_AUTH_KEY:-}
